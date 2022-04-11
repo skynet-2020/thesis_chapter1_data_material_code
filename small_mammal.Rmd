@@ -1,0 +1,139 @@
+---
+title: "small-mammal data"
+output: html_document
+---
+
+```{r}
+rm(list = ls())
+```
+
+
+```{r}
+# library
+library(ggplot2)
+library(tidyverse)
+
+library(lavaan)
+#library(lavaan.survey)
+library(lme4)
+library(nlme)
+library(lmerTest)
+library(piecewiseSEM)
+```
+
+
+
+```{r}
+source("/Users/joshuagilman/Documents/code/thesis/stats/thesis_chapter_1/R_files/constants_new.R")
+```
+
+```{r}
+
+stdError <- function(x) {
+  sd(x) / sqrt(length(x))
+}
+```
+
+```{r}
+test <- small_mammal %>%
+  filter(block != 1 & block != 4) %>%
+  filter(rodent_treatment == "rodent_control") %>%
+  filter(burn_treatment == "burned") %>%
+  View()
+``` 
+this can be used to verify the findings in the graphs below. To make sure the grouping/summarising was done correctly.
+
+```{r}
+rodent_treatment_levels <- c("rodent_exclusion", "rodent_control")
+burn_treatment_levels <- c("burned", "unburned")
+year_levels <- c("2018", "2019", "2020")
+
+# create the dataframe che
+small_mammal_altered <- small_mammal %>%
+  drop_na() %>% # NA values for block under "control" level for rodent_treatment
+  filter(rodent_treatment != "control") %>% 
+  mutate(num_individuals = 1) %>%
+  group_by(trapping_season, block, year, rodent_treatment, burn_treatment) %>% # 
+  summarise(ind_per_level = sum(num_individuals), .groups = 'drop') %>%
+  ungroup() %>%
+  complete(block, year, trapping_season, rodent_treatment, burn_treatment) %>%
+  # mutate(rodent_treatment = factor(rodent_treatment, levels = rodent_treatment_levels)) %>%
+  # mutate(burn_treatment = factor(burn_treatment, levels = burn_treatment_levels)) %>%
+  # mutate(year = factor(year, levels = year_levels)) %>% 
+  filter(year != 2017 & rodent_treatment != "control" & burn_treatment != "control") %>% 
+  mutate(ind_per_level = replace_na(ind_per_level, 0))
+
+```
+
+
+
+
+```{r}
+str(small_mammal_altered)
+```
+
+
+# fix factor levels che!!!!
+```{r}
+# all blocks
+small_mammal_altered %>%
+  filter(rodent_treatment != "control") %>%
+  dplyr::group_by(rodent_treatment, year, trapping_season) %>%
+  dplyr::summarise(mean = mean(ind_per_level), standard_error = stdError(ind_per_level)) %>%
+  ggplot(aes(x = trapping_season, y = mean, fill = rodent_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + facet_wrap(~year, strip.position = "bottom") + scale_fill_manual(labels = c("Rodent-access", "Rodent-exclusion"), values = c("grey80", "grey20")) + ylab("minimum number of individuals") + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.title = element_blank(),
+    legend.position = c(0.28, 0.95))
+
+
+# no prop
+small_mammal_altered %>%
+  filter(rodent_treatment != "control" & block != 1 & block != 4 & burn_treatment == "burned") %>%
+  dplyr::group_by(trapping_season, year, rodent_treatment) %>%
+  dplyr::summarise(mean = mean(ind_per_level), standard_error = stdError(ind_per_level)) %>%
+  ggplot(aes(x = trapping_season, y = mean, fill = rodent_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + facet_wrap(~year, strip.position = "bottom") + scale_fill_manual(labels = c("Rodent-access", "Rodent-exclusion"), values = c("grey80", "grey20")) + ylab("minimum number of individuals") + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(size = 11), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.title = element_blank(),
+    legend.position = c(0.28, 0.95))
+
+ggsave(path = tc1_photo_path, "small_mammal_year_season.png", width = 6, height = 4)
+
+```
+```{r}
+small_mammal_altered %>%
+  filter(rodent_treatment != "control" & block != 1 & block != 4 & burn_treatment == "burned") %>%
+  dplyr::group_by(rodent_treatment, year) %>%
+  dplyr::summarise(mean = mean(ind_per_level), standard_error = stdError(ind_per_level)) %>%
+  View()
+```
+
+```{r}
+small_mammal_altered %>%
+  filter(rodent_treatment != "control") %>%
+  dplyr::group_by(rodent_treatment, year) %>%
+  dplyr::summarise(mean = mean(ind_per_level), standard_error = stdError(ind_per_level)) %>%
+  View()
+```
+

@@ -4,25 +4,7 @@ output: html_document
 ---
 
 
-TODO: 
 
-Thesis Chapter 2.
-Coordinate a whenisgood time for the week of Jan. 4-Jan. 11. 
-
-
-Thesis Chapter 1.
-1.) find new model structure. SOLVED
-2.) values look different in new_density_temp and new_density. SOLVED
-3.) fix the cover program. SOLVED
-4.) verify that the programs are working correctly. SOLVED
-
-1.) look into the scaling issue in the model. SOLVED
-2.) create new, simplified R markdown files with the re-ran models. https://stat.ethz.ch/~meier/teaching/anova/split-plot-designs.html
-2.4) re-ogranize thesis chapter 1 R files.
-2.5) decide on which models to go with.
-3.) create a new, unified table with BRTE_density, BRTE_cover, ELEL_density, CETE_density
-4.) create a couple visualizations that will reflect the plant community piece (start with visualizations that show significance!)
-5.) think of some plausible questions that reflect that part.
 
 
 ```{r setup, include=FALSE}
