@@ -1,0 +1,270 @@
+---
+title: "SEM_analysis"
+output: html_document
+---
+
+# library
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(vegan)
+# library(lavaan)
+# library(lavaan.survey)
+library(lme4)
+library(piecewiseSEM) # this is the developmental version of the package.
+library(devtools)
+```
+get rid of a package that has been installed:
+
+
+# notes
+how to install the developmental version:
+https://github.com/jslefche/piecewiseSEM
+
+error with the updated version:
+https://stackoverflow.com/questions/43350715/extracting-path-coefficients-of-piecewise-sem-structural-equation-model
+
+lefcheck issues:
+https://www.giters.com/jslefche/piecewiseSEM/issues
+
+
+The newest version of the package (2.1.2) changed a whole bunch of things (see github.com/sflefche/piecewiseSEM). That made it so the lmer code would not work. 
+
+
+```{r}
+rm(list=ls())
+```
+
+
+# source
+```{r}
+source("/Users/joshuagilman/Documents/code/thesis/stats/thesis_chapter_1/R_files/constants_new.R")
+```
+
+
+
+# functions
+```{r}
+# model visualization
+model_visualization <- function(model) {
+  hist(residuals(model))
+  plot(model)
+}
+
+# normality visualizations
+normality_visualization <- function(model) {
+  hist(resid(model)) #residuals all look OK
+  plot(model,3) 
+  plot(model,1)
+  plot(model,2)
+  plot(model,4)
+}
+
+# heterogenerity of variance visualizations
+boxplot_visualization <- function(dataframe, x_var, y_var) {
+  x_var <- enquo(x_var)
+  y_var <- enquo(y_var)
+  
+  dataframe %>%
+    ggplot(aes(x = !! x_var, y = !! y_var)) + geom_boxplot()
+}
+
+# num zeros in data
+num_zeros_in_data <- function(dataframe, response_variable) {
+  num_zeros = 0
+  for (row in 1:nrow(dataframe)) {
+  if (dataframe[row, response_variable] == 0) {
+    num_zeros = 1 + num_zeros
+    }
+  }
+  return(num_zeros)
+}
+
+```
+
+
+
+# filter data
+```{r}
+# WITHOUT WP DATA
+SEM_df <- shelter_cover_density_new_joined %>% 
+  filter(block != 1 & block != 4 & precip_treatment != "control" & precip_treatment != "post_control") %>% 
+  mutate(rodent_bin = ifelse(rodent_treatment == "rodent_control", 0, 1), precip_bin = ifelse(precip_treatment == "drought", 0,1), year_bin = ifelse(year == 2018, 0,1), burn_bin = ifelse(burn_treatment == "burn", 0,1), propagule_bin = ifelse(propagule_pressure == "no", 0,1)) %>%
+  mutate(BRTE_density_sqrt = sqrt(BRTE_density)) %>%
+  mutate(BRTE_density_sqrt_sqrt = sqrt(BRTE_density_sqrt)) %>%
+  mutate(ELEL_density_sqrt = sqrt(ELEL_density)) %>%
+  mutate(ELEL_density_sqrt_sqrt = sqrt(ELEL_density_sqrt)) %>%
+  mutate(CETE_density_sqrt = sqrt(CETE_density)) %>%
+  mutate(CETE_density_sqrt_sqrt = sqrt(CETE_density_sqrt)) %>%
+  mutate(BRTE_canopy_cover_sqrt = sqrt(BRTE_canopy_cover)) %>%
+  mutate(BRTE_canopy_cover_sqrt_sqrt = sqrt(BRTE_canopy_cover_sqrt)) %>%
+  mutate(ELEL_canopy_cover_sqrt = sqrt(ELEL_canopy_cover)) %>%
+  mutate(ELEL_canopy_cover_sqrt_sqrt = sqrt(ELEL_canopy_cover_sqrt)) %>%
+  mutate(CETE_canopy_cover_sqrt = sqrt(CETE_canopy_cover)) %>%
+  mutate(CETE_canopy_cover_sqrt_sqrt = sqrt(CETE_canopy_cover_sqrt)) %>%
+  filter(precip_treatment != "control" & precip_treatment != "post_control") 
+
+
+SEM_df_2018 <- SEM_df %>%
+  filter(year == 2018)
+
+SEM_df_2019 <- SEM_df %>%
+  filter(year == 2019)
+
+SEM_df_2020 <- SEM_df %>%
+  filter(year == 2020)
+
+```
+
+
+
+```{r}
+# Join BRTE_density_2018 (from SEM_df_2018) with SEM_df_2019
+# we need this as a predictor in the model.
+SEM_df_2019_2018_BRTE_predictor <- SEM_df_2018 %>%
+  select(BRTE_density, shelter) %>%
+  rename(BRTE_density_2018 = BRTE_density) %>%
+  inner_join(.,SEM_df_2019, by = "shelter" )
+
+SEM_df_2020_2019_BRTE_predictor <- SEM_df_2019 %>%
+  select(BRTE_density, shelter) %>%
+  rename(BRTE_density_2019 = BRTE_density) %>%
+  inner_join(.,SEM_df_2020, by = "shelter" )
+
+```
+
+
+#.
+# DIVERSITY SEMS
+
+# @data
+```{r}
+canopy_cover_step_1 <- model_veg %>%
+  select(shelter, year, BRTE_canopy_cover, CETE_canopy_cover, ELEL_canopy_cover, annual_mustard_canopy_cover) 
+
+canopy_cover_shannon_diversity <- diversity(canopy_cover_step_1[3:6], index = "shannon", MARGIN = 1, base = exp(1))
+
+canopy_cover_step_1[["shannon_diversity_canopy_cover"]] <- canopy_cover_shannon_diversity 
+
+canopy_cover_step_2 <- canopy_cover_step_1 %>%
+  select(shelter, year, shannon_diversity_canopy_cover)
+
+shannon_diversity_canopy_cover_df_SEM <- model_veg %>%
+  inner_join(., canopy_cover_step_2, by = c("shelter", "year")) %>% 
+  filter(block != 1 & block != 4 & precip_treatment != "control" & precip_treatment != "post_control") %>% 
+  mutate(rodent_bin = ifelse(rodent_treatment == "rodent_control", 0, 1), precip_bin = ifelse(precip_treatment == "drought", 0,1), year_bin = ifelse(year == 2018, 0,1), burn_bin = ifelse(burn_treatment == "burn", 0,1), propagule_bin = ifelse(propagule_pressure == "no", 0,1)) %>%
+  mutate(BRTE_density_sqrt = sqrt(BRTE_density)) %>%
+  mutate(BRTE_density_sqrt_sqrt = sqrt(BRTE_density_sqrt)) %>%
+  mutate(ELEL_density_sqrt = sqrt(ELEL_density)) %>%
+  mutate(ELEL_density_sqrt_sqrt = sqrt(ELEL_density_sqrt)) %>%
+  mutate(CETE_density_sqrt = sqrt(CETE_density)) %>%
+  mutate(CETE_density_sqrt_sqrt = sqrt(CETE_density_sqrt)) %>%
+  mutate(BRTE_canopy_cover_sqrt = sqrt(BRTE_canopy_cover)) %>%
+  mutate(BRTE_canopy_cover_sqrt_sqrt = sqrt(BRTE_canopy_cover_sqrt)) %>%
+  mutate(ELEL_canopy_cover_sqrt = sqrt(ELEL_canopy_cover)) %>%
+  mutate(ELEL_canopy_cover_sqrt_sqrt = sqrt(ELEL_canopy_cover_sqrt)) %>%
+  mutate(CETE_canopy_cover_sqrt = sqrt(CETE_canopy_cover)) %>%
+  mutate(CETE_canopy_cover_sqrt_sqrt = sqrt(CETE_canopy_cover_sqrt)) %>%
+  filter(precip_treatment != "control" & precip_treatment != "post_control")
+
+shannon_diversity_canopy_cover_df_SEM_2018 <- shannon_diversity_canopy_cover_df_SEM %>% 
+  filter(year == 2018)
+
+shannon_diversity_canopy_cover_df_SEM_2019 <- shannon_diversity_canopy_cover_df_SEM %>% 
+  filter(year == 2019)
+
+shannon_diversity_canopy_cover_df_SEM_2020 <- shannon_diversity_canopy_cover_df_SEM %>% 
+  filter(year == 2020)
+
+```
+
+
+#.
+# 2018 lmer
+# @models
+```{r}
+# PSEM 1
+psem_A_2018 <- lmer(BRTE_density_sqrt ~ (1|block) + (1|whole_plot) + (1|split_plot) + burn_bin + rodent_bin + precip_bin, data = shannon_diversity_canopy_cover_df_SEM_2018)
+
+model_visualization(psem_A_2018)
+
+psem_B_2018 <- lmer(shannon_diversity_canopy_cover ~ (1|block) + (1|whole_plot) + (1|split_plot) + BRTE_density_sqrt + burn_bin + rodent_bin + precip_bin, data = shannon_diversity_canopy_cover_df_SEM_2018)
+
+model_visualization(psem_B_2018)
+```
+
+```{r}
+psem_vegetation_2018_A_no_prop <- psem(psem_A_2018, psem_B_2018)
+
+```
+
+
+```{r}
+coefs(psem_vegetation_2018_A_no_prop)
+```
+
+
+
+```{r}
+summary(psem_vegetation_2018_A_no_prop)
+```
+
+#.
+# 2019 lmer
+# @models
+```{r}
+
+psem_A_2019 <- lmer(BRTE_density_sqrt ~ (1|block) + (1|whole_plot) + (1|split_plot) + burn_bin + rodent_bin + precip_bin, data = shannon_diversity_canopy_cover_df_SEM_2019)
+
+model_visualization(psem_A_2019)
+
+psem_B_2019 <- lmer(shannon_diversity_canopy_cover ~ (1|block) + (1|whole_plot) + (1|split_plot) + BRTE_density_sqrt + burn_bin + rodent_bin + precip_bin, data = shannon_diversity_canopy_cover_df_SEM_2019)
+
+model_visualization(psem_B_2019)
+```
+
+```{r}
+psem_vegetation_2019_A_no_prop <- psem(psem_A_2019, psem_B_2019)
+
+```
+
+
+```{r}
+coefs(psem_vegetation_2019_A_no_prop)
+```
+
+
+```{r}
+summary(psem_vegetation_2019_A_no_prop)
+```
+
+
+#.
+# 2020 lmer
+# @models
+```{r}
+
+psem_A_2020 <- lmer(BRTE_density_sqrt ~ (1|block) + (1|whole_plot) + (1|split_plot) + burn_bin + rodent_bin + precip_bin, data = shannon_diversity_canopy_cover_df_SEM_2020)
+
+model_visualization(psem_A_2020)
+
+psem_B_2020 <- lmer(shannon_diversity_canopy_cover ~ (1|block) + (1|whole_plot) + (1|split_plot) + BRTE_density_sqrt + burn_bin + rodent_bin + precip_bin, data = shannon_diversity_canopy_cover_df_SEM_2020)
+
+model_visualization(psem_B_2020)
+```
+
+```{r}
+psem_vegetation_2020_A_no_prop <- psem(psem_A_2020, psem_B_2020)
+
+```
+
+
+
+```{r}
+coefs(psem_vegetation_2020_A_no_prop)
+```
+
+
+```{r}
+summary(psem_vegetation_2020_A_no_prop)
+```

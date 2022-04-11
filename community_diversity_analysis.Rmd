@@ -1,0 +1,1244 @@
+---
+title: "community_diversity_analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# library
+```{r}
+library(lme4)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(car)
+library(emmeans)
+library(lubridate)
+library(lavaan)
+library(lavaan.survey)
+library(lme4)
+library(nlme)
+library(lmerTest)
+library(piecewiseSEM)
+library(MuMIn)
+library(car)
+library(vegan)
+```
+
+
+```{r}
+rm(list=ls())
+```
+
+
+# source
+```{r}
+source("/Users/joshuagilman/Documents/code/thesis/stats/thesis_chapter_1/R_files/constants_new.R")
+```
+
+
+# functions
+```{r}
+stdError <- function(x) {
+  sd(x) / sqrt(length(x))
+}
+
+normality_visualization <- function(model) {
+  hist(resid(model)) #residuals all look OK
+  plot(model,3) 
+  plot(model,1)
+  plot(model,2)
+  plot(model,4)
+}
+
+# heterogenerity of variance visualizations
+boxplot_visualization <- function(dataframe, x_var, y_var) {
+  x_var <- enquo(x_var)
+  y_var <- enquo(y_var)
+  
+  dataframe %>%
+    ggplot(aes(x = !! x_var, y = !! y_var)) + geom_boxplot() + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"))
+}
+
+model_visualization <- function(model) {
+  hist(residuals(model))
+  plot(model)
+}
+```
+
+
+# data
+```{r}
+species_richness_model <- model_veg %>%
+  mutate(BRTE_present = ifelse(BRTE_density > 0, 1, 0), CETE_present = ifelse(total_canopy_cover > 0, 1, 0), ELEL_present = ifelse(ELEL_density > 0, 1, 0), DEPI_present = ifelse(DEPI_density > 0, 1, 0), LEPE_present = ifelse(LEPE_density > 0, 1, 0), ALAL_present = ifelse(ALAL_density > 0, 1, 0), annual_mustard_present = ifelse(annual_mustard_density > 0, 1, 0)) %>%
+  mutate(species_richness_density = (BRTE_present + CETE_present + ELEL_present + annual_mustard_present + annual_mustard_present)/sqrt(BRTE_density + total_canopy_cover + ELEL_density + annual_mustard_density)) %>%
+  mutate(species_richness_density_sqrt = sqrt(species_richness_density)) %>%
+  mutate(species_richness_density_no_mustard = BRTE_present + CETE_present + ELEL_present) %>%
+  mutate(species_richness_density_no_mustard_sqrt = sqrt(species_richness_density_no_mustard)) %>%
+  mutate(Weights = ifelse(species_richness_density == 0, 0, 1/species_richness_density)) 
+
+```
+
+
+#.
+# species_richness_density
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@ OUTLIERS @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+dotchart(species_richness_model$species_richness_density, xlab = "species_richness_density",
+         ylab = "Order of the data")
+
+dotchart(species_richness_model$species_richness_density_sqrt, xlab = "species_richness_density_sqrt",
+         ylab = "Order of the data")
+```
+
+
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@ NORMALITY @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+#
+lm_species_richness_density<- lm(species_richness_density~precip_treatment*rodent_treatment*burn_treatment,data=species_richness_model)
+normality_visualization(lm_species_richness_density)
+
+lm_species_richness_density_sqrt<- lm(species_richness_density_sqrt~precip_treatment*rodent_treatment*burn_treatment,data=species_richness_model)
+normality_visualization(lm_species_richness_density_sqrt)
+```
+
+
+```{r}
+boxplot_visualization(species_richness_model, block, species_richness_density) 
+# slightly unequal
+
+boxplot_visualization(species_richness_model, year, species_richness_density) 
+# slightly unequal
+
+boxplot_visualization(species_richness_model, precip_treatment, species_richness_density) 
+# slightly unequal
+
+boxplot_visualization(species_richness_model, rodent_treatment, species_richness_density) 
+# slightly unequal
+
+boxplot_visualization(species_richness_model, burn_treatment, species_richness_density)  
+```
+
+
+# @model
+```{r}
+species_richness_density_model = lmer(species_richness_density ~ precip_treatment * rodent_treatment * burn_treatment * year + (1|whole_plot) + (1|split_plot) + (1|block), data = species_richness_model)
+model_visualization(species_richness_density_model)
+
+species_richness_density_sqrt_model = lmer(species_richness_density_sqrt ~ precip_treatment * rodent_treatment * burn_treatment * year + (1|whole_plot) + (1|split_plot) + (1|block), data = species_richness_model)
+model_visualization(species_richness_density_sqrt_model)
+```
+
+
+
+```{r}
+anova(species_richness_density_model)
+anova(species_richness_density_sqrt_model)
+```
+
+# @ave species_richness_averages
+```{r}
+# species_richness_model %>%
+#   #filter(year != 2018) %>%
+#   dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+#   dplyr::summarise(mean = mean(species_richness_density), standard_error = stdError(species_richness_density)) %>%
+#   View()
+```
+
+# @plots
+```{r}
+facet_panel_labels_rodent <- list('rodent_control' = "Rodent-access", 'rodent_exclusion' = "Rodent-exclusion")
+
+plot_labeller <- function(variable, value) {
+  return(facet_panel_labels_rodent[value])
+}
+```
+
+
+```{r}
+
+species_richness_model %>%
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(species_richness_density), standard_error = stdError(species_richness_density)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("C. testiculata") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    )
+
+```
+
+
+
+
+
+
+
+
+
+
+#.
+# Shannon diversity (canopy_cover)
+```{r}
+
+canopy_cover_step_1 <- model_veg %>%
+  select(shelter, year, BRTE_canopy_cover, CETE_canopy_cover, ELEL_canopy_cover, annual_mustard_canopy_cover) 
+
+canopy_cover_shannon_diversity <- diversity(canopy_cover_step_1[3:6], index = "shannon", MARGIN = 1, base = exp(1))
+
+canopy_cover_step_1[["shannon_diversity_canopy_cover"]] <- canopy_cover_shannon_diversity 
+
+canopy_cover_step_2 <- canopy_cover_step_1 %>%
+  select(shelter, year, shannon_diversity_canopy_cover)
+
+shannon_diversity_canopy_cover_df <- model_veg %>%
+  inner_join(., canopy_cover_step_2, by = c("shelter", "year") )
+
+
+
+```
+
+
+
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@ OUTLIERS @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+dotchart(shannon_diversity_canopy_cover_df$shannon_diversity_canopy_cover, xlab = "shannon_diversity_canopy_cover",
+         ylab = "Order of the data")
+
+#dotchart(shannon_diversity_canopy_cover_df$shannon_diversity_canopy_cover_sqrt, xlab = "shannon_diversity_canopy_cover_sqrt",
+         #ylab = "Order of the data")
+```
+
+
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@ NORMALITY @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+#
+lm_shannon_diversity_canopy_cover<- lm(shannon_diversity_canopy_cover~precip_treatment*rodent_treatment*burn_treatment,data=shannon_diversity_canopy_cover_df)
+normality_visualization(lm_shannon_diversity_canopy_cover)
+
+# lm_shannon_diversity_canopy_cover_sqrt<- lm(shannon_diversity_canopy_cover_sqrt~precip_treatment*rodent_treatment*burn_treatment,data=shannon_diversity_canopy_cover_df)
+# normality_visualization(lm_shannon_diversity_canopy_cover_sqrt)
+```
+
+
+```{r}
+boxplot_visualization(shannon_diversity_canopy_cover_df, block, shannon_diversity_canopy_cover) 
+# slightly unequal
+
+boxplot_visualization(shannon_diversity_canopy_cover_df, year, shannon_diversity_canopy_cover) 
+# slightly unequal
+
+boxplot_visualization(shannon_diversity_canopy_cover_df, precip_treatment, shannon_diversity_canopy_cover) 
+# slightly unequal
+
+boxplot_visualization(shannon_diversity_canopy_cover_df, rodent_treatment, shannon_diversity_canopy_cover) 
+# slightly unequal
+
+boxplot_visualization(shannon_diversity_canopy_cover_df, burn_treatment, shannon_diversity_canopy_cover)  
+```
+
+
+# @model
+```{r}
+shannon_diversity_canopy_cover_model = lmer(shannon_diversity_canopy_cover ~ precip_treatment * rodent_treatment * burn_treatment * year + (1|whole_plot) + (1|split_plot) + (1|block), data = shannon_diversity_canopy_cover_df)
+model_visualization(shannon_diversity_canopy_cover_model)
+
+# shannon_diversity_canopy_cover_sqrt_model = lmer(shannon_diversity_canopy_cover_sqrt ~ precip_treatment * rodent_treatment * burn_treatment * year + (1|whole_plot) + (1|split_plot) + (1|block), data = shannon_diversity_canopy_cover_df)
+# model_visualization(shannon_diversity_canopy_cover_sqrt_model)
+```
+
+
+
+```{r}
+anova(shannon_diversity_canopy_cover_model)
+# anova(shannon_diversity_canopy_cover_sqrt_model)
+```
+
+# @ave CETE_averages
+```{r}
+# shannon_diversity_canopy_cover_df %>%
+#   #filter(year != 2018) %>%
+#   dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+#   dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>%
+#   View()
+```
+
+# @plots
+```{r}
+facet_panel_labels_rodent <- list('rodent_control' = "Rodent-access", 'rodent_exclusion' = "Rodent-exclusion")
+
+plot_labeller <- function(variable, value) {
+  return(facet_panel_labels_rodent[value])
+}
+```
+
+
+```{r}
+
+shannon_diversity_canopy_cover_df %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(year == 2018) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment, year) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("Bromus tectorum") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+shannon_diversity_canopy_cover_df %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(year == 2019) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment, year) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("Bromus tectorum") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+shannon_diversity_canopy_cover_df %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(year == 2020) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment, year) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("Bromus tectorum") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+```
+
+```{r}
+shannon_diversity_canopy_cover_df %>%
+  filter(block == 2) %>% 
+  filter(year == 2019) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment, year) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("Bromus tectorum") ~ "(m" ^ "-2" ~ ")"))) + ggtitle("block 2") + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+shannon_diversity_canopy_cover_df %>%
+  filter(block == 3) %>% 
+  filter(year == 2019) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment, year) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("Bromus tectorum") ~ "(m" ^ "-2" ~ ")"))) + ggtitle("block 3") + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+shannon_diversity_canopy_cover_df %>%
+  filter(block == 5) %>% 
+  filter(year == 2019) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment, year) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("Bromus tectorum") ~ "(m" ^ "-2" ~ ")"))) + ggtitle("block 5") + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+```
+
+
+
+
+```{r}
+
+shannon_diversity_canopy_cover_df %>%
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("shannon diversity")))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.90, 0.87),
+    legend.title = element_blank()
+    ) 
+ggsave(path = tc1_photo_path, "STORY_shannon_3_way.png", width = 6, height = 3.5)
+
+shannon_diversity_canopy_cover_df %>%
+  dplyr::group_by(rodent_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = rodent_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("shannon diversity")))) + scale_y_continuous(limits = c(0,1)) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_shannon_precip_rodent.png", width = 6, height = 3.5)
+
+shannon_diversity_canopy_cover_df %>%
+  dplyr::group_by(burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("shannon diversity")))) + scale_y_continuous(limits = c(0,1)) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_shannon_precip_burn.png", width = 6, height = 3.5)
+
+
+shannon_diversity_canopy_cover_df %>%
+  dplyr::group_by(burn_treatment, rodent_treatment) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = rodent_treatment, y = mean, fill = burn_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_fill_manual(labels = c("Burn", "Reburn"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("shannon diversity")))) + scale_y_continuous(limits = c(0,1)) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_shannon_rodent_burn.png", width = 6, height = 3.5)
+
+shannon_diversity_canopy_cover_df %>%
+  dplyr::group_by(burn_treatment, rodent_treatment, year) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = rodent_treatment, y = mean, fill = burn_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_fill_manual(labels = c("Burn", "Reburn"), values = c("grey80", "grey20")) + facet_grid(~year) + ylab(expression(paste(italic("shannon diversity")))) + scale_y_continuous(limits = c(0,2)) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 7), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_shannon_rodent_burn_year.png", width = 6, height = 3.5)
+
+```
+
+
+# @plot EDA
+```{r}
+shannon_diversity_canopy_cover_df %>% 
+  filter(year == 2018) %>% 
+  ggplot(aes(x = BRTE_density, y = shannon_diversity_canopy_cover)) + geom_point() + ggtitle("2018") + ylab("Shannon diversity") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_shannon_2018.png", width = 6, height = 3.5)
+  
+shannon_diversity_canopy_cover_df %>% 
+  filter(year == 2019) %>% 
+  ggplot(aes(x = BRTE_density, y = shannon_diversity_canopy_cover)) + geom_point() + ggtitle("2019") + ylab("Shannon diversity") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_shannon_2019.png", width = 6, height = 3.5)
+  
+shannon_diversity_canopy_cover_df %>% 
+  filter(year == 2020) %>% 
+  ggplot(aes(x = BRTE_density, y = shannon_diversity_canopy_cover)) + geom_point() + ggtitle("2020") + ylab("Shannon diversity") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_shannon_2020.png", width = 6, height = 3.5)
+  
+shannon_diversity_canopy_cover_df %>% 
+  ggplot(aes(x = BRTE_density, y = shannon_diversity_canopy_cover)) + ggtitle("All Years") + geom_point() + ylab("Shannon diversity") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_shannon_all_years.png", width = 6, height = 3.5)
+```
+
+
+```{r}
+shannon_diversity_canopy_cover_df %>% 
+  filter(year == 2018) %>% 
+  ggplot(aes(x = BRTE_density, y = ELEL_density)) + geom_point() + ggtitle("2018") + ylab("ELEL density") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_ELEL_2018.png", width = 6, height = 3.5)
+  
+shannon_diversity_canopy_cover_df %>% 
+  filter(year == 2019) %>% 
+  ggplot(aes(x = BRTE_density, y = ELEL_density)) + geom_point() + ggtitle("2019") + ylab("ELEL density") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_ELEL_2019.png", width = 6, height = 3.5)
+  
+shannon_diversity_canopy_cover_df %>% 
+  filter(year == 2020) %>% 
+  ggplot(aes(x = BRTE_density, y = ELEL_density)) + geom_point() + ggtitle("2020") + ylab("ELEL density") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_ELEL_2020.png", width = 6, height = 3.5)
+  
+shannon_diversity_canopy_cover_df %>% 
+  ggplot(aes(x = BRTE_density, y = ELEL_density)) + geom_point() + ggtitle("All Years") + ylab("ELEL density") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_ELEL_all_years.png", width = 6, height = 3.5)
+```
+```{r}
+shannon_diversity_canopy_cover_df %>% 
+  filter(year == 2018) %>% 
+  ggplot(aes(x = BRTE_density, y = CETE_density)) + geom_point() + ggtitle("2018") + ylab("CETE density") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_CETE_2018.png", width = 6, height = 3.5)
+  
+shannon_diversity_canopy_cover_df %>% 
+  filter(year == 2019) %>% 
+  ggplot(aes(x = BRTE_density, y = CETE_density)) + geom_point() + ggtitle("2019") + ylab("CETE density") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_CETE_2019.png", width = 6, height = 3.5)
+  
+shannon_diversity_canopy_cover_df %>% 
+  filter(year == 2020) %>% 
+  ggplot(aes(x = BRTE_density, y = CETE_density)) + geom_point() + ggtitle("2020")+ ylab("CETE density") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_CETE_2020.png", width = 6, height = 3.5)
+  
+shannon_diversity_canopy_cover_df %>% 
+  ggplot(aes(x = BRTE_density, y = CETE_density)) + geom_point() + ggtitle("All Years") + ylab("CETE density") + theme(
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 20, l = 20), size = 12),
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.85, 0.87),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_regression_CETE_all_years.png", width = 6, height = 3.5)
+```
+
+
+
+
+
+#.
+# Shannon diversity (density)
+```{r}
+
+density_step_1 <- model_veg %>%
+  select(shelter, year, BRTE_density, total_canopy_cover, ELEL_density, annual_mustard_density) 
+
+density_shannon_diversity <- diversity(density_step_1[3:6], index = "shannon", MARGIN = 1, base = exp(1))
+
+density_step_1[["shannon_diversity_density"]] <- density_shannon_diversity 
+
+density_step_2 <- density_step_1 %>%
+  select(shelter, year, shannon_diversity_density)
+
+shannon_diversity_density_df <- model_veg %>%
+  inner_join(., density_step_2, by = c("shelter", "year") )
+
+
+
+```
+
+
+
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@ OUTLIERS @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+dotchart(shannon_diversity_density_df$shannon_diversity_density, xlab = "shannon_diversity_density",
+         ylab = "Order of the data")
+
+#dotchart(shannon_diversity_density_df$shannon_diversity_density_sqrt, xlab = "shannon_diversity_density_sqrt",
+         #ylab = "Order of the data")
+```
+
+
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@ NORMALITY @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+#
+lm_shannon_diversity_density<- lm(shannon_diversity_density~precip_treatment*rodent_treatment*burn_treatment,data=shannon_diversity_density_df)
+normality_visualization(lm_shannon_diversity_density)
+
+# lm_shannon_diversity_density_sqrt<- lm(shannon_diversity_density_sqrt~precip_treatment*rodent_treatment*burn_treatment,data=shannon_diversity_density_df)
+# normality_visualization(lm_shannon_diversity_density_sqrt)
+```
+
+
+```{r}
+boxplot_visualization(shannon_diversity_density_df, block, shannon_diversity_density) 
+# slightly unequal
+
+boxplot_visualization(shannon_diversity_density_df, year, shannon_diversity_density) 
+# slightly unequal
+
+boxplot_visualization(shannon_diversity_density_df, precip_treatment, shannon_diversity_density) 
+# slightly unequal
+
+boxplot_visualization(shannon_diversity_density_df, rodent_treatment, shannon_diversity_density) 
+# slightly unequal
+
+boxplot_visualization(shannon_diversity_density_df, burn_treatment, shannon_diversity_density)  
+```
+
+
+# @model
+```{r}
+shannon_diversity_density_model = lmer(shannon_diversity_density ~ precip_treatment * rodent_treatment * burn_treatment * year + (1|whole_plot) + (1|split_plot) + (1|block), data = shannon_diversity_density_df)
+model_visualization(shannon_diversity_density_model)
+
+
+# shannon_diversity_density_sqrt_model = lmer(shannon_diversity_density_sqrt ~ precip_treatment * rodent_treatment * burn_treatment * year + (1|whole_plot) + (1|split_plot) + (1|block), data = shannon_diversity_density_df)
+# model_visualization(shannon_diversity_density_model)
+```
+
+
+
+```{r}
+anova(shannon_diversity_density_model)
+# anova(shannon_diversity_density_sqrt_model)
+```
+
+# @ave CETE_averages
+```{r}
+# shannon_diversity_density_df %>%
+#   #filter(year != 2018) %>%
+#   dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+#   dplyr::summarise(mean = mean(shannon_diversity_density), standard_error = stdError(shannon_diversity_density)) %>%
+#   View()
+```
+
+# @plots
+```{r}
+facet_panel_labels_rodent <- list('rodent_control' = "Rodent-access", 'rodent_exclusion' = "Rodent-exclusion")
+
+plot_labeller <- function(variable, value) {
+  return(facet_panel_labels_rodent[value])
+}
+```
+
+
+
+
+
+```{r}
+
+shannon_diversity_density_df %>%
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_density), standard_error = stdError(shannon_diversity_density)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("shannon diversity (density)")))) + scale_y_continuous(limits = c(0,1)) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+```
+
+
+
+#.
+# total canopy cover
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@ OUTLIERS @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+dotchart(model_veg$total_canopy_cover, xlab = "total_canopy_cover",
+         ylab = "Order of the data")
+
+# dotchart(model_veg$total_canopy_cover_sqrt, xlab = "total_canopy_cover_sqrt",
+#          ylab = "Order of the data")
+```
+
+
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@ NORMALITY @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+#
+lm_total_canopy_cover<- lm(total_canopy_cover~precip_treatment*rodent_treatment*burn_treatment,data=model_veg)
+normality_visualization(lm_total_canopy_cover)
+
+# lm_total_canopy_cover_sqrt<- lm(total_canopy_cover_sqrt~precip_treatment*rodent_treatment*burn_treatment,data=model_veg)
+# normality_visualization(lm_total_canopy_cover_sqrt)
+```
+
+
+```{r}
+boxplot_visualization(model_veg, block, total_canopy_cover) 
+# slightly unequal
+
+boxplot_visualization(model_veg, year, total_canopy_cover) 
+# slightly unequal
+
+boxplot_visualization(model_veg, precip_treatment, total_canopy_cover) 
+# slightly unequal
+
+boxplot_visualization(model_veg, rodent_treatment, total_canopy_cover) 
+# slightly unequal
+
+boxplot_visualization(model_veg, burn_treatment, total_canopy_cover)  
+```
+
+
+# @model
+```{r}
+total_canopy_cover_model = lmer(total_canopy_cover ~ precip_treatment * rodent_treatment * burn_treatment * year + (1|whole_plot) + (1|split_plot) + (1|block), data = model_veg)
+model_visualization(total_canopy_cover_model)
+
+# total_canopy_cover_sqrt_model = lmer(total_canopy_cover_sqrt ~ precip_treatment * rodent_treatment * burn_treatment * year + (1|whole_plot) + (1|split_plot) + (1|block), data = model_veg)
+# model_visualization(total_canopy_cover_sqrt_model)
+```
+```{r}
+anova(total_canopy_cover_model)
+# anova(total_canopy_cover_sqrt_model)
+```
+
+# @ave canopy_cover_averages
+```{r}
+model_veg %>%
+  #filter(year != 2018) %>%
+  dplyr::group_by(precip_treatment) %>%
+  dplyr::summarise(mean = mean(total_canopy_cover), standard_error = stdError(total_canopy_cover)) %>%
+  View()
+```
+
+# @plots
+```{r}
+facet_panel_labels_rodent <- list('rodent_control' = "Rodent-access", 'rodent_exclusion' = "Rodent-exclusion")
+
+plot_labeller <- function(variable, value) {
+  return(facet_panel_labels_rodent[value])
+}
+```
+
+
+```{r}
+
+model_veg %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(total_canopy_cover), standard_error = stdError(total_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("total_canopy_cover")))) + scale_y_continuous(limits = c(0,1)) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_total_cover_3_way.png", width = 6, height = 3.5)
+
+model_veg %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(precip_treatment) %>%
+  dplyr::summarise(mean = mean(total_canopy_cover), standard_error = stdError(total_canopy_cover)) %>% 
+  ggplot(aes(x = precip_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + scale_y_continuous(limits = c(0,1)) + ylab(expression(paste(italic("total_canopy_cover") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_total_cover_precip.png", width = 6, height = 3.5)
+
+model_veg %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(year != "control") %>% 
+  dplyr::group_by(year) %>%
+  dplyr::summarise(mean = mean(total_canopy_cover), standard_error = stdError(total_canopy_cover)) %>% 
+  ggplot(aes(x = year, y = mean, fill = year)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_fill_manual(labels = c("2018", "2019", "2020"), values = c("grey80", "grey40", "grey10")) + scale_y_continuous(limits = c(0,1)) + ylab(expression(paste(italic("total_canopy_cover") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_total_cover_year.png", width = 6, height = 3.5)
+
+model_veg %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(rodent_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, year) %>%
+  dplyr::summarise(mean = mean(total_canopy_cover), standard_error = stdError(total_canopy_cover)) %>% 
+  ggplot(aes(x = rodent_treatment, y = mean, fill = rodent_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + facet_grid(~year) + ylab(expression(paste(italic("total_canopy_cover") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_total_cover_rodent_year.png", width = 6, height = 3.5)
+
+```
+#.
+# total density
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@ OUTLIERS @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+dotchart(model_veg$total_density, xlab = "total_density",
+         ylab = "Order of the data")
+
+# dotchart(model_veg$total_density_sqrt, xlab = "total_density_sqrt",
+#          ylab = "Order of the data")
+```
+
+
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@ NORMALITY @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+#
+lm_total_density<- lm(total_density~precip_treatment*rodent_treatment*burn_treatment,data=model_veg)
+normality_visualization(lm_total_density)
+
+# lm_total_density_sqrt<- lm(total_density_sqrt~precip_treatment*rodent_treatment*burn_treatment,data=model_veg)
+# normality_visualization(lm_total_density_sqrt)
+```
+
+
+```{r}
+boxplot_visualization(model_veg, block, total_density) 
+# slightly unequal
+
+boxplot_visualization(model_veg, year, total_density) 
+# slightly unequal
+
+boxplot_visualization(model_veg, precip_treatment, total_density) 
+# slightly unequal
+
+boxplot_visualization(model_veg, rodent_treatment, total_density) 
+# slightly unequal
+
+boxplot_visualization(model_veg, burn_treatment, total_density)  
+```
+
+
+# @model
+```{r}
+total_density_model = lmer(total_density ~ precip_treatment * rodent_treatment * burn_treatment * year + (1|whole_plot) + (1|split_plot) + (1|block), data = model_veg)
+model_visualization(total_density_model)
+
+# total_density_sqrt_model = lmer(total_density_sqrt ~ precip_treatment * rodent_treatment * burn_treatment * year + (1|whole_plot) + (1|split_plot) + (1|block), data = model_veg)
+# model_visualization(total_density_sqrt_model)
+```
+```{r}
+anova(total_density_model)
+# anova(total_density_sqrt_model)
+```
+
+# @ave total_density_averages
+```{r}
+# model_veg %>%
+#   #filter(year != 2018) %>%
+#   dplyr::group_by(rodent_treatment) %>%
+#   dplyr::summarise(mean = mean(total_density), standard_error = stdError(total_density)) %>%
+#   View()
+```
+
+# @plots
+```{r}
+facet_panel_labels_rodent <- list('rodent_control' = "Rodent-access", 'rodent_exclusion' = "Rodent-exclusion")
+
+plot_labeller <- function(variable, value) {
+  return(facet_panel_labels_rodent[value])
+}
+```
+
+
+```{r}
+
+model_veg %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(rodent_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, year) %>%
+  dplyr::summarise(mean = mean(total_density), standard_error = stdError(total_density)) %>% 
+  ggplot(aes(x = rodent_treatment, y = mean, fill = rodent_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + facet_grid(~year) + ylab(expression(paste(italic("total_density") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+ggsave(path = tc1_photo_path, "STORY_total_cover_rodent_year.png", width = 6, height = 3.5)
+
+model_veg %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(rodent_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(total_density), standard_error = stdError(total_density)) %>% 
+  ggplot(aes(x = rodent_treatment, y = mean, fill = rodent_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("total_density") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) 
+
+
+```
+```{r}
+model_veg %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(total_density), standard_error = stdError(total_density)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("total density") ~ "(m" ^ "-2" ~ ")"))) + scale_y_continuous(limits = c(0,3000)) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    )
+# 
+ggsave(path = tc1_photo_path, "STORY_total_density_3_way.png", width = 6, height = 3.5)
+```
+
+

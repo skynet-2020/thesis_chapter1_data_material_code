@@ -1,0 +1,454 @@
+---
+title: "final_figures_veg"
+output: html_document
+---
+
+
+```{r}
+library(lme4)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(car)
+library(emmeans)
+library(lubridate)
+library(lavaan)
+library(lavaan.survey)
+library(lme4)
+library(nlme)
+library(lmerTest)
+library(piecewiseSEM)
+library(MuMIn)
+library(car)
+library(vegan)
+library(lattice)
+#library(scales)
+library(gganimate)
+library(gifski)
+library(bayestestR)
+library(patchwork)
+```
+
+
+
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+stdError <- function(x) {
+  sd(x) / sqrt(length(x))
+}
+```
+
+```{r}
+source("/Users/joshuagilman/Documents/code/thesis/stats/thesis_chapter_1/R_files/constants_new.R")
+```
+
+
+# functions
+```{r}
+facet_panel_labels_rodent <- list('rodent_control' = "Rodent-access", 'rodent_exclusion' = "Rodent-exclusion")
+
+plot_labeller <- function(variable, value) {
+  return(facet_panel_labels_rodent[value])
+}
+```
+
+# data
+```{r}
+canopy_cover_step_1 <- model_veg %>%
+  select(shelter, year, BRTE_canopy_cover, CETE_canopy_cover, ELEL_canopy_cover, annual_mustard_canopy_cover) 
+
+canopy_cover_shannon_diversity <- diversity(canopy_cover_step_1[3:6], index = "shannon", MARGIN = 1, base = exp(1))
+
+canopy_cover_step_1[["shannon_diversity_canopy_cover"]] <- canopy_cover_shannon_diversity 
+
+canopy_cover_step_2 <- canopy_cover_step_1 %>%
+  select(shelter, year, shannon_diversity_canopy_cover)
+
+shannon_diversity_canopy_cover_df <- model_veg %>%
+  inner_join(., canopy_cover_step_2, by = c("shelter", "year") )
+```
+
+
+
+# @BRTE_density 3-way
+```{r}
+BRTE_density_fig <- shelter_cover_density_new_joined %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(BRTE_density), standard_error = stdError(BRTE_density)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.80, position = position_dodge(width = 0.80)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.80), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste("Cheatgrass density") ~ "(m" ^ "-2" ~ ")")) + theme(
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    strip.text.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_blank(), # cannot figure out how to manually place the facet_strip.
+    #axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.15, 0.8),
+    legend.title = element_blank()
+    ) 
+
+# ggsave(path = tc1_figure_bw_photo_path, "BRTE_density_3_way.png", width = 6, height = 3.5)
+
+BRTE_density_fig
+```
+# @BRTE_cover 3-way
+```{r}
+# # BRTE_cover with facet strip on the bottom
+# BRTE_cover_fig <- shelter_cover_density_new_joined %>%
+#   filter(block != 1 & block != 4) %>% 
+#   filter(precip_treatment != "control") %>% 
+#   dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+#   dplyr::summarise(mean = mean(BRTE_canopy_cover), standard_error = stdError(BRTE_canopy_cover)) %>% 
+#   ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.80, position = position_dodge(width = 0.80)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.80), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste("Cheatgrass") ~ "(% cover)")) + theme(
+#     axis.title.x = element_blank(),
+#     axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+#     #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+#     axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+#     axis.text = element_text(size = 10),
+#     strip.placement = "outside",
+#     #axis.ticks = element_blank(),
+#     panel.grid.major = element_blank(),
+#     panel.grid.minor = element_blank(),
+#     panel.background = element_blank(),
+#     panel.border = element_blank(),
+#     axis.line = element_line(colour = "black"),
+#     legend.title = element_blank(),
+#     legend.position = "none") 
+
+# BRTE_cover_fig without facet strip on the bottom.
+BRTE_cover_fig <- shelter_cover_density_new_joined %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(BRTE_canopy_cover), standard_error = stdError(BRTE_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.80, position = position_dodge(width = 0.80)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.80), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste("Cheatgrass cover") ~ "(%)")) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    strip.text.x = element_text(size = 10),
+    legend.position = "none",
+    legend.title = element_blank()
+    ) 
+
+# ggsave(path = tc1_figure_bw_photo_path, "BRTE_cover_3_way.png", width = 6, height = 3.5)
+
+BRTE_cover_fig
+
+```
+
+axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.title = element_blank(),
+    legend.position = "none")     
+    
+    
+
+# @CETE_density 3-way
+```{r}
+CETE_density_fig <- shelter_cover_density_new_joined %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(CETE_density), standard_error = stdError(CETE_density)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.80, position = position_dodge(width = 0.80)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.80), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("C. testiculata") ~ "(m" ^ "-2" ~ ")"))) + scale_y_continuous(limits = c(0,800)) + theme(
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    strip.text.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_blank(), # cannot figure out how to manually place the facet_strip.
+    #axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.15, 0.99),
+    legend.title = element_blank()
+    ) 
+
+# ggsave(path = tc1_photo_path, "CETE_density_3_way.png", width = 6, height = 3.5)
+
+CETE_density_fig
+```
+
+# @ELEL_density 3-way
+```{r}
+ELEL_density_fig <- shelter_cover_density_new_joined %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(ELEL_density), standard_error = stdError(ELEL_density)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.80, position = position_dodge(width = 0.80)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.80), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("E. elymoides") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    strip.text.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_blank(), # cannot figure out how to manually place the facet_strip.
+    #axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = "none",
+    legend.title = element_blank()
+    ) 
+
+# ggsave(path = tc1_photo_path, "ELEL_density_3_way.png", width = 6, height = 3.5)
+
+ELEL_density_fig
+```
+# @Community Density
+```{r}
+community_density_fig <- model_veg %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(total_density), standard_error = stdError(total_density)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste("Total plant density") ~ "(m" ^ "-2" ~ ")")) + scale_y_continuous(limits = c(0,3000)) + theme(
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    strip.text.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_blank(), # cannot figure out how to manually place the facet_strip.
+    #axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.15, 0.8),
+    legend.title = element_blank()
+    ) 
+
+community_density_fig
+```
+
+
+# @Community Cover
+```{r}
+community_cover_fig <- model_veg %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(total_canopy_cover), standard_error = stdError(total_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste("Total plant cover (%)"))) + scale_y_continuous(limits = c(0,1)) + theme(
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    strip.text.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_blank(), # cannot figure out how to manually place the facet_strip.
+    #axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = "none",
+    legend.title = element_blank()
+    ) 
+
+community_cover_fig
+```
+
+
+
+# @Shannon D. 3-way
+```{r}
+SD_density_fig <- shannon_diversity_canopy_cover_df %>%
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(shannon_diversity_canopy_cover), standard_error = stdError(shannon_diversity_canopy_cover)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.80, position = position_dodge(width = 0.80)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.80), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + facet_wrap(. ~ rodent_treatment, labeller = plot_labeller, strip.position = "bottom") + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste("Shannon diversity"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    strip.text.x = element_text(size = 10),
+    legend.position = "none",
+    legend.title = element_blank()
+    ) 
+
+# ggsave(path = tc1_figure_bw_photo_path, "STORY_shannon_rodent_burn_year.png", width = 6, height = 3.5)
+
+SD_density_fig
+
+```
+
+
+
+# @other
+```{r}
+shelter_cover_density_new_joined %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(BRTE_density), standard_error = stdError(BRTE_density)) %>% 
+  ungroup() %>%
+  slice(1 ,4, 5, 6, 7, 8) %>%
+  mutate(new_column = row_number()) %>%
+  ggplot(aes(x = new_column, y = mean)) + geom_bar(stat = "identity", fill = "white", color = "black") + ylab(expression(paste(italic("Bromus tectorum") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    # axis.title.y = element_blank(),
+    # axis.text.y = element_blank(),
+    # axis.line.y = element_blank(),
+    # axis.ticks.y = element_blank(),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text = element_text(size = 10),
+    #strip.placement = "outside",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.position = c(0.25, 0.8),
+    legend.title = element_blank()
+    ) #+ ggsave(path = tc1_photo_path, "BRTE_dens_alt.png", width = 5, height = 2.2)
+```
+axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()
+
+```{r}
+
+
+shelter_cover_density_new_joined %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, burn_treatment) %>%
+  dplyr::summarise(mean = mean(BRTE_density), standard_error = stdError(BRTE_density)) %>% 
+  ggplot(aes(x = burn_treatment, y = mean, fill = rodent_treatment)) + geom_bar(stat = "identity", width = 0.90, position = position_dodge(width = 0.90)) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(width = 0.90), stat = "identity") + scale_x_discrete(labels = c("burn" = "Burn", "re_burn" = "Reburn")) + ylab(expression(paste(italic("Bromus tectorum") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 12), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 10),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.title = element_blank(),
+    legend.position = c(0.18, 0.80)) #+ ggsave(path = tc1_photo_path, "BRTE_density_rodent_burn_2018.png", width = 6, height = 3.5)
+
+
+
+```
+
+
+
+
+```{r}
+shelter_cover_density_new_joined %>%
+  filter(block != 1 & block != 4) %>% 
+  filter(precip_treatment != "control") %>% 
+  dplyr::group_by(rodent_treatment, precip_treatment) %>%
+  dplyr::summarise(mean = mean(ELEL_density), standard_error = stdError(ELEL_density)) %>% 
+  ggplot(aes(x = rodent_treatment, y = mean, fill = precip_treatment)) + geom_bar(stat = "identity", width = 0.70, position = position_dodge()) + geom_errorbar(aes(ymin = mean - standard_error, ymax = mean + standard_error, width = 0.1), position = position_dodge(0.70), stat = "identity") + scale_x_discrete(labels = c("rodent_control" = "Rodent-access", "rodent_exclusion" = "Rodent-exclusion")) + scale_fill_manual(labels = c("Drought", "Drought-pulse"), values = c("grey80", "grey20")) + ylab(expression(paste(italic("Elymus elymoides") ~ "(m" ^ "-2" ~ ")"))) + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 8),
+    #axis.text.x = element_text(margin = margin(t = 0, r = 10, b = 0, l = 20), size = 12),
+    axis.text.x = element_text(vjust = -0.1, size = 8), # cannot figure out how to manually place the facet_strip.
+    axis.text = element_text(size = 8),
+    strip.placement = "outside",
+    #axis.ticks = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    legend.title = element_blank(),
+    legend.position = c(0.28, 0.80)) #+ ggsave(path = tc1_photo_path, "ELEL_density_2_way.png", width = 4, height = 3)
+```
+
+#.
+# Fig. BRTE
+```{r}
+BRTE_density_fig
+BRTE_cover_fig
+```
+
+```{r}
+(BRTE_density_fig) / (BRTE_cover_fig) + plot_layout(ncol = 1, nrow = 2, heights = c(1,1)) & plot_annotation(tag_levels = 'A', title = "Figure 2") & theme(
+   plot.title = element_text(size = 24),
+   plot.tag = element_text(size = 16),
+   plot.subtitle = element_text(size = 10))
+ggsave(path = tc1_figure_bw_photo_path, "BRTE_figure.png", height = 6, width = 5, scale = 1.3)
+```
+
+
+
+
+
+
+#.
+# Fig. Community
+```{r}
+community_density_fig
+community_cover_fig
+SD_density_fig
+```
+
+```{r}
+(community_density_fig) / (community_cover_fig) + (SD_density_fig) + plot_layout(ncol = 1, nrow = 3, heights = c(1,1,1)) & plot_annotation(tag_levels = 'A', title = "Figure 3") & theme(
+   plot.title = element_text(size = 24),
+   plot.tag = element_text(size = 16),
+   plot.subtitle = element_text(size = 10))
+ggsave(path = tc1_figure_bw_photo_path, "community_figure.png", height = 6, width = 4.5, scale = 1.5)
+```
+
