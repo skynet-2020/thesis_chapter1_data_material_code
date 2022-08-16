@@ -36,6 +36,17 @@ rm(list=ls())
 ```
 
 
+# Notes
+1.) the analysis included in the paper was done using an older version of lme4 (1.1.27.1). Reviewer 2 mentions that lme4 does not produce p-values and that he does not know how we got them. I think he was using a more updated version of the package.
+
+2.) Reviewer #2 questions why the "control" precip treatment was not included in the analysis. The reason is because the control treatment was not fully replicated throughout the blocks. The control treatment was designed for the soil water data to ensure that a rainout shelter with the slats facing down did not have a different soil water availabiltiy than a spot not underneath the rainout shelter. The control was never used in the context of the vegetation data.
+
+
+
+
+
+
+
 # source
 ```{r}
 source("/Users/joshuagilman/Documents/code/thesis/stats/thesis_chapter_1/R_files/constants_new.R")
@@ -102,6 +113,8 @@ dotchart(model_veg$BRTE_density, xlab = "BRTE_density",
 dotchart(model_veg$BRTE_density_sqrt, xlab = "BRTE_density_sqrt",
          ylab = "Order of the data")
 ```
+
+
 ```{r}
 #@@@@@@@@@@@@@@@@@@@@@@@@@ NORMALITY @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 #
